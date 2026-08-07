@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   PawPrint,
   MonitorPlay,
+  MessageCircle,
 } from "lucide-react"
 import Link from "next/link"
 import { SidebarNotification } from "@/components/sidebar-notification"
@@ -38,6 +39,7 @@ const data = {
       label: "Monitor",
       items: [
         { title: "Overview",  url: "/dashboard",  icon: LayoutDashboard },
+        { title: "Client",    url: "/client",     icon: MessageCircle },
         { title: "Browser",   url: "/browser",    icon: MonitorPlay },
         { title: "Requests",  url: "/requests",   icon: Activity },
         { title: "Threads",   url: "/threads",    icon: MessageSquare },

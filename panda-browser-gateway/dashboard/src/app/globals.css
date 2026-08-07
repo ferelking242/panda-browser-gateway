@@ -153,6 +153,35 @@ html {
   scroll-behavior: smooth;
 }
 
+/* The control room must stay usable between narrow phones and wide monitors. */
+@media (max-width: 639px) {
+  :root {
+    --radius: 0.5rem;
+  }
+
+  body {
+    font-size: 0.875rem;
+  }
+
+  [data-slot="sidebar-inset"] {
+    min-width: 0;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  [data-slot="sidebar-inset"] {
+    min-width: 0;
+  }
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Logo carousel animation */
 @keyframes logo-scroll {
   0% {

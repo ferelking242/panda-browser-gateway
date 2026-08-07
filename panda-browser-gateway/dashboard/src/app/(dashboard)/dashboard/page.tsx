@@ -1,25 +1,36 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState } from "react"
-import { gatewayApi, GatewayStatus, GatewayConfig, formatMs, formatUptime } from "@/lib/gateway-api"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
-  Wifi, WifiOff, Bot, Code2, Database, Server, Zap,
-  RefreshCw, Trash2, Activity, Layers, ChevronRight
+  Activity,
+  ArrowUpRight,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
+  Database,
+  Layers,
+  MessageCircle,
+  MonitorPlay,
+  RefreshCw,
+  Server,
+  Trash2,
+  Wifi,
+  WifiOff,
 } from "lucide-react"
 
-const ALL_PROVIDERS = [
-  { id: "chatgpt", label: "ChatGPT", color: "bg-green-500", models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"] },
-  { id: "claude", label: "Claude", color: "bg-orange-500", models: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"] },
-  { id: "gemini", label: "Gemini", color: "bg-blue-500", models: ["gemini-2.0-flash", "gemini-1.5-pro"] },
-  { id: "deepseek", label: "DeepSeek", color: "bg-cyan-500", models: ["deepseek-r1", "deepseek-v3"] },
-  { id: "grok", label: "Grok", color: "bg-slate-400", models: ["grok-3", "grok-3-mini", "grok-2"] },
-  { id: "mistral", label: "Mistral", color: "bg-purple-500", models: ["mistral-large", "mistral-small", "codestral"] },
-  { id: "qwen", label: "Qwen", color: "bg-rose-500", models: ["qwen-max", "qwen-plus", "qwq-32b"] },
-  { id: "kimi", label: "Kimi", color: "bg-sky-500", models: ["kimi-k2", "moonshot-v1-32k", "moonshot-v1-128k"] },
-]
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  gatewayApi,
+  GatewayConfig,
+  GatewayStatus,
+  RequestEntry,
+  formatMs,
+  formatTs,
+  formatUptime,
+} from "@/lib/gateway-api"
 
 interface PoolStatus {
   pool_size: number
@@ -39,37 +50,61 @@ interface CacheStats {
   hit_rate_pct: number
 }
 
+interface GatewayStats {
+  uptime_seconds: number
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+  avg_response_time_ms: number
+}
+
+function RuntimeRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b py-2.5 last:border-0">
+      <span className="shrink-0 text-xs text-muted-foreground sm:text-sm">{label}</span>
+      <span className={`min-w-0 truncate text-right text-xs sm:text-sm ${mono ? "font-mono" : "font-medium"}`}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [status, setStatus] = useState<GatewayStatus | null>(null)
   const [config, setConfig] = useState<GatewayConfig | null>(null)
   const [poolStatus, setPoolStatus] = useState<PoolStatus | null>(null)
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null)
-  const [stats, setStats] = useState<{ uptime_seconds: number; total_requests: number; successful_requests: number; avg_response_time_ms: number } | null>(null)
+  const [stats, setStats] = useState<GatewayStats | null>(null)
+  const [requests, setRequests] = useState<RequestEntry[]>([])
   const [offline, setOffline] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [clearingMemory, setClearingMemory] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
 
   const load = async () => {
     try {
-      const [st, cfg, gStats] = await Promise.all([
+      const [st, cfg, gStats, recent] = await Promise.all([
         gatewayApi.status(),
         gatewayApi.config(),
         gatewayApi.stats(),
+        gatewayApi.requests(),
       ])
       setStatus(st)
       setConfig(cfg)
       setStats(gStats)
+      setRequests(recent.slice(0, 6))
       setOffline(false)
 
-      // Load pool and cache stats (best-effort — may not be available if gateway is down)
       const [poolRes, cacheRes] = await Promise.allSettled([
-        fetch("/v1/pool/status", { cache: "no-store" }).then(r => r.json()),
-        fetch("/v1/cache/stats", { cache: "no-store" }).then(r => r.json()),
+        fetch("/v1/pool/status", { cache: "no-store" }).then((response) => response.json()),
+        fetch("/v1/cache/stats", { cache: "no-store" }).then((response) => response.json()),
       ])
       if (poolRes.status === "fulfilled") setPoolStatus(poolRes.value)
       if (cacheRes.status === "fulfilled") setCacheStats(cacheRes.value)
     } catch {
       setOffline(true)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -98,306 +133,203 @@ export default function DashboardPage() {
     }
   }
 
-  const activeProvider = config?.provider || "chatgpt"
-  const providerInfo = ALL_PROVIDERS.find(p => p.id === activeProvider) || ALL_PROVIDERS[0]
+  const successRate = stats && stats.total_requests > 0
+    ? Math.round((stats.successful_requests / stats.total_requests) * 100)
+    : 0
+  const sessionReady = !offline && Boolean(status?.logged_in)
+  const provider = config?.provider ? config.provider.charAt(0).toUpperCase() + config.provider.slice(1) : "—"
 
   return (
     <>
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="px-4 lg:px-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+      <div className="px-3 sm:px-4 lg:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">🐼</span>
-              <h1 className="text-2xl font-bold tracking-tight">Panda Gateway</h1>
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Server className="size-4" />
+              </div>
+              <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">Control room</h1>
             </div>
-            <p className="text-muted-foreground text-sm mt-1">OpenAI-compatible browser gateway · 8 providers</p>
+            <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm">
+              Live operational view of the gateway, browser session and traffic.
+            </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {!offline && status && (
-              <Badge
-                variant={status.logged_in ? "default" : "secondary"}
-                className="flex items-center gap-1.5 px-3 py-1"
-              >
-                {status.logged_in
-                  ? <><Wifi className="size-3" /> Browser active</>
-                  : <><WifiOff className="size-3" /> Needs login</>}
-              </Badge>
-            )}
-            {offline && (
-              <Badge variant="destructive" className="flex items-center gap-1.5 px-3 py-1">
-                <WifiOff className="size-3" /> API offline · start on :8000
-              </Badge>
-            )}
-            <Button variant="ghost" size="sm" onClick={load} className="gap-1.5">
-              <RefreshCw className="size-3" /> Refresh
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={offline ? "destructive" : sessionReady ? "default" : "secondary"}
+              className="gap-1.5 px-2.5 py-1 text-[11px] sm:text-xs"
+            >
+              {offline ? <WifiOff className="size-3" /> : <Wifi className="size-3" />}
+              {offline ? "API offline" : sessionReady ? "Session ready" : "Login required"}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={load} className="gap-1.5 text-xs sm:text-sm">
+              <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="px-4 lg:px-6 space-y-6">
-
-        {/* ── KPI cards ──────────────────────────────────────── */}
-        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+      <div className="min-w-0 space-y-4 px-3 sm:space-y-5 sm:px-4 lg:space-y-6 lg:px-6">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
           <Card>
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <Activity className="size-3" /> Uptime
+            <CardHeader className="px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
+              <CardTitle className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
+                <Clock3 className="size-3" /> Uptime
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-2xl font-bold">
-                {stats ? formatUptime(stats.uptime_seconds) : "—"}
-              </div>
+            <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+              <div className="text-lg font-bold sm:text-2xl">{stats ? formatUptime(stats.uptime_seconds) : "—"}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <Zap className="size-3" /> Requests
+            <CardHeader className="px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
+              <CardTitle className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
+                <Activity className="size-3" /> Requests
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-2xl font-bold">
-                {stats ? stats.total_requests.toLocaleString() : "—"}
-              </div>
-              {stats && stats.total_requests > 0 && (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {Math.round((stats.successful_requests / stats.total_requests) * 100)}% success
-                </p>
-              )}
+            <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+              <div className="text-lg font-bold sm:text-2xl">{stats ? stats.total_requests.toLocaleString() : "—"}</div>
+              <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">{stats ? `${successRate}% success` : "Waiting for data"}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <Bot className="size-3" /> Avg Latency
+            <CardHeader className="px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
+              <CardTitle className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
+                <Activity className="size-3" /> Avg latency
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-2xl font-bold">
-                {stats ? formatMs(stats.avg_response_time_ms) : "—"}
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">per request</p>
+            <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+              <div className="text-lg font-bold sm:text-2xl">{stats ? formatMs(stats.avg_response_time_ms) : "—"}</div>
+              <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">per request</p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <Layers className="size-3" /> Pool
+            <CardHeader className="px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
+              <CardTitle className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
+                <Layers className="size-3" /> Browser pool
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-2xl font-bold">
-                {poolStatus ? `${poolStatus.available}/${poolStatus.pool_size}` : "—"}
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">browsers free</p>
+            <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+              <div className="text-lg font-bold sm:text-2xl">{poolStatus ? `${poolStatus.available}/${poolStatus.pool_size}` : "—"}</div>
+              <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">slots available</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* ── Middle row ─────────────────────────────────────── */}
-        <div className="grid gap-4 md:grid-cols-3">
-
-          {/* Gateway status */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Server className="size-4 text-primary" /> Gateway
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.65fr)]">
+          <Card className="min-w-0">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Server className="size-4 text-primary" /> Gateway runtime
               </CardTitle>
+              <Badge variant={offline ? "destructive" : "outline"} className="text-[10px] sm:text-xs">
+                {offline ? "Unavailable" : "Connected"}
+              </Badge>
             </CardHeader>
-            <CardContent className="space-y-2.5 text-sm">
+            <CardContent className="min-w-0">
               {offline ? (
-                <p className="text-muted-foreground">Cannot reach API server.</p>
-              ) : config ? (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Provider</span>
-                    <span className="font-medium flex items-center gap-1.5">
-                      <span className={`inline-block size-2 rounded-full ${providerInfo.color}`} />
-                      {providerInfo.label}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Model</span>
-                    <span className="font-mono text-xs">{poolStatus?.default_model || "—"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Pool size</span>
-                    <span className="font-medium">{poolStatus?.pool_size ?? 1}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Browser</span>
-                    <span className={`font-medium ${status?.logged_in ? "text-green-500" : "text-yellow-500"}`}>
-                      {status?.logged_in ? "Logged in" : "Needs login"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Thread</span>
-                    <span className="font-mono text-xs truncate max-w-[130px]">
-                      {status?.current_thread || "none"}
-                    </span>
-                  </div>
-                </>
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-muted-foreground sm:text-sm">
+                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
+                  <span>The API server cannot be reached. Check the workflow before sending traffic.</span>
+                </div>
               ) : (
-                <p className="text-muted-foreground text-sm">Loading…</p>
+                <div className="grid gap-x-8 sm:grid-cols-2">
+                  <RuntimeRow label="Provider" value={provider} />
+                  <RuntimeRow label="Model" value={poolStatus?.default_model || "—"} mono />
+                  <RuntimeRow label="Browser session" value={status?.logged_in ? "Authenticated" : "Login required"} />
+                  <RuntimeRow label="API endpoint" value={`:${config?.api_port ?? 8000}`} mono />
+                  <RuntimeRow label="Current thread" value={status?.current_thread || "None"} mono />
+                  <RuntimeRow label="Cache" value={cacheStats?.enabled ? "Enabled" : "Disabled"} />
+                </div>
               )}
-              <div className="pt-1">
-                <Button
-                  size="sm" variant="outline" className="w-full gap-1.5 text-xs"
-                  onClick={handleClearMemory} disabled={clearingMemory || offline}
-                >
-                  <Trash2 className="size-3" />
-                  {clearingMemory ? "Clearing…" : "Clear Memory"}
+              <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
+                <Button asChild size="sm" className="gap-1.5 text-xs sm:text-sm">
+                  <Link href="/client"><MessageCircle className="size-3.5" /> Open client</Link>
+                </Button>
+                <Button asChild size="sm" variant="outline" className="gap-1.5 text-xs sm:text-sm">
+                  <Link href="/browser"><MonitorPlay className="size-3.5" /> Manage browser</Link>
+                </Button>
+                <Button size="sm" variant="ghost" className="gap-1.5 text-xs sm:text-sm" onClick={handleClearMemory} disabled={clearingMemory || offline}>
+                  <Trash2 className="size-3.5" /> {clearingMemory ? "Clearing…" : "Clear memory"}
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Cache */}
-          <Card>
+          <Card className="min-w-0">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Database className="size-4 text-primary" /> Cache
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <CheckCircle2 className="size-4 text-primary" /> Session readiness
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2.5 text-sm">
-              {cacheStats ? (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Status</span>
-                    <Badge variant={cacheStats.enabled ? "default" : "secondary"} className="text-xs">
-                      {cacheStats.enabled ? "Enabled" : "Disabled"}
-                    </Badge>
-                  </div>
-                  {cacheStats.enabled && (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">TTL</span>
-                        <span className="font-medium">{cacheStats.ttl_seconds}s</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Entries</span>
-                        <span className="font-medium">{cacheStats.entries_valid} / {cacheStats.entries_total}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Hit rate</span>
-                        <span className="font-medium text-green-500">{cacheStats.hit_rate_pct}%</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Hits / Misses</span>
-                        <span className="font-medium">{cacheStats.hits} / {cacheStats.misses}</span>
-                      </div>
-                    </>
-                  )}
-                  {!cacheStats.enabled && (
-                    <p className="text-xs text-muted-foreground">Set <code className="text-xs bg-muted px-1 rounded">CACHE_TTL=300</code> to enable.</p>
-                  )}
-                </>
-              ) : (
-                <p className="text-muted-foreground text-sm">Loading…</p>
-              )}
-              {cacheStats?.enabled && (
-                <div className="pt-1">
-                  <Button
-                    size="sm" variant="outline" className="w-full gap-1.5 text-xs"
-                    onClick={handleClearCache} disabled={clearingCache || offline}
-                  >
-                    <Trash2 className="size-3" />
-                    {clearingCache ? "Clearing…" : "Clear Cache"}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Quick start */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Code2 className="size-4 text-primary" /> Quick Start
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="text-xs bg-muted rounded-md p-3 overflow-x-auto text-muted-foreground leading-relaxed">
-{`from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="none"
-)
-
-resp = client.chat.completions.create(
-    model="${providerInfo.models[0]}",
-    messages=[{"role":"user",
-               "content":"Hello!"}]
-)
-print(resp.choices[0].message.content)`}
-              </pre>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* ── Provider grid ───────────────────────────────────── */}
-        <div>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-            <Bot className="size-4" /> Supported Providers
-          </h2>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
-            {ALL_PROVIDERS.map(p => {
-              const isActive = p.id === activeProvider
-              return (
-                <Card key={p.id} className={`relative transition-all ${isActive ? "ring-2 ring-primary" : "opacity-80 hover:opacity-100"}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`size-2.5 rounded-full ${p.color}`} />
-                        <span className="font-semibold text-sm">{p.label}</span>
-                      </div>
-                      {isActive && (
-                        <Badge className="text-[10px] px-1.5 py-0">Active</Badge>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {p.models.slice(0, 2).map(m => (
-                        <span key={m} className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm font-mono truncate max-w-full">
-                          {m}
-                        </span>
-                      ))}
-                      {p.models.length > 2 && (
-                        <span className="text-[10px] text-muted-foreground">+{p.models.length - 2} more</span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* ── Pool slots ──────────────────────────────────────── */}
-        {poolStatus && poolStatus.pool_size > 1 && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <Layers className="size-4" /> Browser Pool
-            </h2>
-            <div className="flex gap-2 flex-wrap">
-              {poolStatus.slots.map(slot => (
-                <div
-                  key={slot.index}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-md border text-sm font-medium ${
-                    slot.healthy ? "border-green-500/30 bg-green-500/5 text-green-600 dark:text-green-400" : "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400"
-                  }`}
-                >
-                  <span className={`size-2 rounded-full ${slot.healthy ? "bg-green-500" : "bg-red-500"}`} />
-                  Browser {slot.index}
+            <CardContent className="space-y-3">
+              {[
+                ["Gateway API", !offline],
+                ["Browser process", !offline && Boolean(status)],
+                ["Provider session", sessionReady],
+              ].map(([label, ready]) => (
+                <div key={String(label)} className="flex items-center gap-2 text-xs sm:text-sm">
+                  {ready ? <CheckCircle2 className="size-4 text-emerald-500" /> : <CircleAlert className="size-4 text-amber-500" />}
+                  <span className={ready ? "" : "text-muted-foreground"}>{label}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">{ready ? "Ready" : "Action needed"}</span>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
+              <div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+                {sessionReady
+                  ? "The gateway can receive requests from the client."
+                  : "Open Browser to authenticate the provider session before sending a request."}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.65fr)]">
+          <Card className="min-w-0">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Activity className="size-4 text-primary" /> Recent activity
+              </CardTitle>
+              <Button asChild variant="ghost" size="sm" className="h-7 gap-1 text-xs">
+                <Link href="/requests">View all <ArrowUpRight className="size-3" /></Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              {requests.length === 0 ? (
+                <div className="px-4 pb-5 pt-2 text-xs text-muted-foreground sm:text-sm">No requests recorded yet.</div>
+              ) : (
+                <div className="divide-y">
+                  {requests.map((request, index) => (
+                    <div key={`${request.timestamp}-${index}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto_auto] sm:text-sm">
+                      <span className="font-mono text-muted-foreground">{formatTs(request.timestamp)}</span>
+                      <span className="truncate font-mono">{request.endpoint}</span>
+                      <Badge variant={request.status === "ok" ? "default" : "destructive"} className="h-5 text-[10px]">{request.status}</Badge>
+                      <span className="hidden font-mono text-muted-foreground sm:block">{formatMs(request.response_time_ms)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="min-w-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Database className="size-4 text-primary" /> Cache & capacity
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              <RuntimeRow label="Cache status" value={cacheStats?.enabled ? "Enabled" : "Disabled"} />
+              <RuntimeRow label="Cache entries" value={cacheStats ? `${cacheStats.entries_valid}/${cacheStats.entries_total}` : "—"} mono />
+              <RuntimeRow label="Hit rate" value={cacheStats ? `${cacheStats.hit_rate_pct}%` : "—"} />
+              <RuntimeRow label="Healthy browsers" value={poolStatus ? `${poolStatus.available}/${poolStatus.pool_size}` : "—"} mono />
+              {cacheStats?.enabled && (
+                <Button size="sm" variant="outline" className="mt-2 w-full gap-1.5 text-xs" onClick={handleClearCache} disabled={clearingCache || offline}>
+                  <Trash2 className="size-3.5" /> {clearingCache ? "Clearing…" : "Clear cache"}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </>
   )

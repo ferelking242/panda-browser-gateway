@@ -72,6 +72,24 @@ export interface ThreadEntry {
   [key: string]: unknown;
 }
 
+export interface GatewayModel {
+  id: string;
+  object?: string;
+  created?: number;
+  owned_by?: string;
+}
+
+export interface ChatCompletionResponse {
+  id: string;
+  model: string;
+  choices: Array<{
+    message: {
+      role: string;
+      content?: string | null;
+    };
+  }>;
+}
+
 // ── Fetch helpers ─────────────────────────────────────────────────
 
 async function safeJson<T>(res: Response): Promise<T> {
@@ -109,6 +127,13 @@ export async function patchConfig(body: Partial<GatewayConfig & { api_token?: st
 }
 
 export const gatewayApi = {
+  models: () => get<{ data: GatewayModel[] }>("/v1/models"),
+  chat: (body: {
+    model: string;
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+    temperature?: number;
+    stream?: boolean;
+  }) => post<ChatCompletionResponse>("/v1/chat/completions", body),
   stats: () => get<GatewayStats>("/api/dashboard/stats"),
   requests: () => get<RequestEntry[]>("/api/dashboard/requests"),
   config: () => get<GatewayConfig>("/api/dashboard/config"),

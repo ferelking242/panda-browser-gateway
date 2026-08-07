@@ -20,9 +20,9 @@ export default function DashboardLayout({
   return (
     <SidebarProvider
       style={{
-        "--sidebar-width": "16rem",
+        "--sidebar-width": "15.5rem",
         "--sidebar-width-icon": "3rem",
-        "--header-height": "calc(var(--spacing) * 14)",
+        "--header-height": "3.75rem",
       } as React.CSSProperties}
       className={config.collapsible === "none" ? "sidebar-none-mode" : ""}
     >
@@ -37,7 +37,7 @@ export default function DashboardLayout({
             <SiteHeader />
             <div className="flex flex-1 flex-col">
               <div className="@container/main flex flex-1 flex-col gap-2">
-                <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+                <div className="flex min-w-0 flex-col gap-3 py-3 sm:gap-4 sm:py-4 lg:gap-6 lg:py-6">
                   {children}
                 </div>
               </div>
@@ -51,7 +51,7 @@ export default function DashboardLayout({
             <SiteHeader />
             <div className="flex flex-1 flex-col">
               <div className="@container/main flex flex-1 flex-col gap-2">
-                <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+                <div className="flex min-w-0 flex-col gap-3 py-3 sm:gap-4 sm:py-4 lg:gap-6 lg:py-6">
                   {children}
                 </div>
               </div>
