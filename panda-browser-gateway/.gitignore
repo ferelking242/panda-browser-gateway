@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Browser data (logins, cookies)
+browser_data/
+browser_data_claude/
+
+# Logs & downloads
+logs/
+downloads/
+
+# Env
+.env
+
+# Node
+dashboard/node_modules/
+dashboard/.next/
+
+# Replit internal
+attached_assets/
+.cache/
+.agents/
+.local/
+.replit
+
+# OS
+.DS_Store
+*.swp
+
+# Cloned subdirectory (artifact of previous agent run)
+repo/

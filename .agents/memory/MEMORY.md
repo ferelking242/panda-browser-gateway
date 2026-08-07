@@ -1,0 +1,1 @@
+- [Chromium on Nix](chromium-nix.md) — bundled Chromium needs the Nix runtime libraries installed before Patchright can launch.

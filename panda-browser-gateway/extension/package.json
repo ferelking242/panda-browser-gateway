@@ -1,0 +1,30 @@
+{
+  "name": "panda-browser-gateway",
+  "displayName": "Panda Browser Gateway",
+  "description": "AI browser gateway — OpenAI-compatible API bridging ChatGPT and Claude via browser automation. Installable as a panda-ide extension.",
+  "version": "1.0.0",
+  "pandaGateway": {
+    "entryPoint": "extension/gateway.js",
+    "pythonModule": "src.api.server",
+    "apiPort": 8000,
+    "dashboardPort": 3000,
+    "bridgePort": 9221,
+    "requires": ["python3", "pip"],
+    "defaultEnvFile": "android.env",
+    "githubRepo": "ferelking242/panda-browser-gateway",
+    "releaseAsset": "panda-browser-gateway.zip"
+  },
+  "main": "extension/gateway.js",
+  "scripts": {
+    "start": "node extension/gateway.js",
+    "install-deps": "pip install -r requirements.txt"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ferelking242/panda-browser-gateway"
+  },
+  "license": "GPL-3.0"
+}
